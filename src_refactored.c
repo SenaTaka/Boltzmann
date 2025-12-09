@@ -118,7 +118,6 @@ typedef struct {
     double *****G;
     
     // Time stepping arrays
-    double *****fn;
     double *****fb;
     
     // Integration arrays
@@ -186,7 +185,6 @@ void runge_kutta_step1(SimulationState *state, const GridConfig *config,
                       const PhysicalConstants *pc);
 void runge_kutta_step2(SimulationState *state, const GridConfig *config,
                       const PhysicalConstants *pc);
-void update_distribution(SimulationState *state, const GridConfig *config);
 
 // Integration
 void integrate_macroscopic_quantities(SimulationState *state, const GridConfig *config);
@@ -255,7 +253,6 @@ int main(void) {
         compute_flux_y(state, &config);
         determine_timestep(state, &config, &pc);
         runge_kutta_step2(state, &config, &pc);
-        update_distribution(state, &config);
         integrate_macroscopic_quantities(state, &config);
         update_transport_properties(state, &config, &pc);
         
@@ -499,7 +496,6 @@ SimulationState* create_simulation_state(const GridConfig *config) {
     state->G = alloc5D(config->nx, config->ny, config->ncj, config->nck, config->ncl);
     
     // Allocate time stepping arrays
-    state->fn = alloc5D(config->nx, config->ny, config->ncj, config->nck, config->ncl);
     state->fb = alloc5D(config->nx, config->ny, config->ncj, config->nck, config->ncl);
     
     // Allocate integration arrays
@@ -518,7 +514,7 @@ SimulationState* create_simulation_state(const GridConfig *config) {
         !state->f || !state->feq || !state->mic_vel_ave || !state->freq_coll ||
         !state->mfp || !state->mu || !state->nb1 || !state->nb2 ||
         !state->F || !state->G ||
-        !state->fn || !state->fb || !state->sum1_n || !state->sum2_n ||
+        !state->fb || !state->sum1_n || !state->sum2_n ||
         !state->sum1_v1 || !state->sum2_v1 || !state->sum1_v2 || !state->sum2_v2 ||
         !state->sum1_p || !state->sum2_p) {
         destroy_simulation_state(state, config);
@@ -557,7 +553,6 @@ void destroy_simulation_state(SimulationState *state, const GridConfig *config) 
     free5D(state->F, config->nx, config->ny, config->ncj, config->nck);
     free5D(state->G, config->nx, config->ny, config->ncj, config->nck);
     
-    free5D(state->fn, config->nx, config->ny, config->ncj, config->nck);
     free5D(state->fb, config->nx, config->ny, config->ncj, config->nck);
     
     free4D(state->sum1_n, config->nx, config->ny, config->nck);
@@ -1161,27 +1156,10 @@ void runge_kutta_step2(SimulationState *state, const GridConfig *config,
                                              state->freq_coll[i][i2] / pc->t_ref *
                                              (state->f[i][i2][j][k][l] - state->feq[i][i2][j][k][l]);
                             
-                            state->fn[i][i2][j][k][l] = 0.5 * (state->fb[i][i2][j][k][l] +
-                                                               state->f[i][i2][j][k][l] +
-                                                               state->dt * rhs_star);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-void update_distribution(SimulationState *state, const GridConfig *config) {
-    #pragma omp parallel
-    {
-        #pragma omp for collapse(2) nowait
-        for (int i = 2; i < config->nx - 2; i++) {
-            for (int i2 = 2; i2 < config->ny - 2; i2++) {
-                for (int j = 0; j < config->ncj; j++) {
-                    for (int k = 0; k < config->nck; k++) {
-                        for (int l = 0; l < config->ncl; l++) {
-                            state->f[i][i2][j][k][l] = state->fn[i][i2][j][k][l];
+                            // Write directly to f, eliminating the need for fn array
+                            state->f[i][i2][j][k][l] = 0.5 * (state->fb[i][i2][j][k][l] +
+                                                              state->f[i][i2][j][k][l] +
+                                                              state->dt * rhs_star);
                         }
                     }
                 }
