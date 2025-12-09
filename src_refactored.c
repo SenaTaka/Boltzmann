@@ -116,8 +116,6 @@ typedef struct {
     // Flux arrays
     double *****F;
     double *****G;
-    double *****phi_x;
-    double *****phi_y;
     
     // Time stepping arrays
     double *****fn;
@@ -178,8 +176,6 @@ double calculate_f_gamma(int j, int k, int l, const Coefficients *coeffs,
                         const SimulationState *state, double vi, double vi2);
 
 // Flux computation
-void compute_flux_limiters_x(SimulationState *state, const GridConfig *config);
-void compute_flux_limiters_y(SimulationState *state, const GridConfig *config);
 void compute_flux_x(SimulationState *state, const GridConfig *config);
 void compute_flux_y(SimulationState *state, const GridConfig *config);
 
@@ -245,9 +241,7 @@ int main(void) {
         // First RK2 stage
         apply_boundary_conditions(state, &config, &ic, &pc);
         compute_local_equilibrium_newton(state, &config, &nc, &pc);
-        compute_flux_limiters_x(state, &config);
         compute_flux_x(state, &config);
-        compute_flux_limiters_y(state, &config);
         compute_flux_y(state, &config);
         determine_timestep(state, &config, &pc);
         runge_kutta_step1(state, &config, &pc);
@@ -257,9 +251,7 @@ int main(void) {
         // Second RK2 stage
         apply_boundary_conditions(state, &config, &ic, &pc);
         compute_local_equilibrium_newton(state, &config, &nc, &pc);
-        compute_flux_limiters_x(state, &config);
         compute_flux_x(state, &config);
-        compute_flux_limiters_y(state, &config);
         compute_flux_y(state, &config);
         determine_timestep(state, &config, &pc);
         runge_kutta_step2(state, &config, &pc);
@@ -505,8 +497,6 @@ SimulationState* create_simulation_state(const GridConfig *config) {
     // Allocate flux arrays
     state->F = alloc5D(config->nx, config->ny, config->ncj, config->nck, config->ncl);
     state->G = alloc5D(config->nx, config->ny, config->ncj, config->nck, config->ncl);
-    state->phi_x = alloc5D(config->nx, config->ny, config->ncj, config->nck, config->ncl);
-    state->phi_y = alloc5D(config->nx, config->ny, config->ncj, config->nck, config->ncl);
     
     // Allocate time stepping arrays
     state->fn = alloc5D(config->nx, config->ny, config->ncj, config->nck, config->ncl);
@@ -527,7 +517,7 @@ SimulationState* create_simulation_state(const GridConfig *config) {
         !state->n || !state->v1 || !state->v2 || !state->p || !state->T ||
         !state->f || !state->feq || !state->mic_vel_ave || !state->freq_coll ||
         !state->mfp || !state->mu || !state->nb1 || !state->nb2 ||
-        !state->F || !state->G || !state->phi_x || !state->phi_y ||
+        !state->F || !state->G ||
         !state->fn || !state->fb || !state->sum1_n || !state->sum2_n ||
         !state->sum1_v1 || !state->sum2_v1 || !state->sum1_v2 || !state->sum2_v2 ||
         !state->sum1_p || !state->sum2_p) {
@@ -566,8 +556,6 @@ void destroy_simulation_state(SimulationState *state, const GridConfig *config) 
     
     free5D(state->F, config->nx, config->ny, config->ncj, config->nck);
     free5D(state->G, config->nx, config->ny, config->ncj, config->nck);
-    free5D(state->phi_x, config->nx, config->ny, config->ncj, config->nck);
-    free5D(state->phi_y, config->nx, config->ny, config->ncj, config->nck);
     
     free5D(state->fn, config->nx, config->ny, config->ncj, config->nck);
     free5D(state->fb, config->nx, config->ny, config->ncj, config->nck);
@@ -1016,48 +1004,6 @@ void compute_local_equilibrium_newton(SimulationState *state, const GridConfig *
 // Flux Computation
 //*******************************************************************************************
 
-void compute_flux_limiters_x(SimulationState *state, const GridConfig *config) {
-    #pragma omp parallel
-    {
-        #pragma omp for collapse(2) nowait
-        for (int i = 1; i < config->nx - 2; i++) {
-            for (int i2 = 0; i2 < config->ny; i2++) {
-                for (int j = 0; j < config->ncj; j++) {
-                    for (int k = 0; k < config->nck; k++) {
-                        for (int l = 0; l < config->ncl; l++) {
-                            double df_minus = state->f[i][i2][j][k][l] - state->f[i-1][i2][j][k][l];
-                            double df_mid = state->f[i+1][i2][j][k][l] - state->f[i][i2][j][k][l];
-                            double df_plus = state->f[i+2][i2][j][k][l] - state->f[i+1][i2][j][k][l];
-                            state->phi_x[i][i2][j][k][l] = minmod(df_minus, df_mid, df_plus);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-void compute_flux_limiters_y(SimulationState *state, const GridConfig *config) {
-    #pragma omp parallel
-    {
-        #pragma omp for collapse(2) nowait
-        for (int i = 0; i < config->nx; i++) {
-            for (int i2 = 1; i2 < config->ny - 2; i2++) {
-                for (int j = 0; j < config->ncj; j++) {
-                    for (int k = 0; k < config->nck; k++) {
-                        for (int l = 0; l < config->ncl; l++) {
-                            double df_minus = state->f[i][i2][j][k][l] - state->f[i][i2-1][j][k][l];
-                            double df_mid = state->f[i][i2+1][j][k][l] - state->f[i][i2][j][k][l];
-                            double df_plus = state->f[i][i2+2][j][k][l] - state->f[i][i2+1][j][k][l];
-                            state->phi_y[i][i2][j][k][l] = minmod(df_minus, df_mid, df_plus);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 void compute_flux_x(SimulationState *state, const GridConfig *config) {
     #pragma omp parallel
     {
@@ -1070,7 +1016,16 @@ void compute_flux_x(SimulationState *state, const GridConfig *config) {
                         for (int l = 0; l < config->ncl; l++) {
                             double f_left = state->f[i][i2][j][k][l];
                             double f_right = state->f[i+1][i2][j][k][l];
-                            double phi = state->phi_x[i][i2][j][k][l];
+                            
+                            // Compute phi_x inline (flux limiter)
+                            double phi = 0.0;
+                            if (i >= 1 && i < config->nx - 2) {
+                                double df_minus = state->f[i][i2][j][k][l] - state->f[i-1][i2][j][k][l];
+                                double df_mid = state->f[i+1][i2][j][k][l] - state->f[i][i2][j][k][l];
+                                double df_plus = state->f[i+2][i2][j][k][l] - state->f[i+1][i2][j][k][l];
+                                phi = minmod(df_minus, df_mid, df_plus);
+                            }
+                            
                             state->F[i][i2][j][k][l] = 0.5 * c1 * (f_right + f_left) -
                                                       0.5 * fabs(c1) * (f_right - f_left - phi);
                         }
@@ -1093,7 +1048,16 @@ void compute_flux_y(SimulationState *state, const GridConfig *config) {
                         for (int l = 0; l < config->ncl; l++) {
                             double f_lower = state->f[i][i2][j][k][l];
                             double f_upper = state->f[i][i2+1][j][k][l];
-                            double phi = state->phi_y[i][i2][j][k][l];
+                            
+                            // Compute phi_y inline (flux limiter)
+                            double phi = 0.0;
+                            if (i2 >= 1 && i2 < config->ny - 2) {
+                                double df_minus = state->f[i][i2][j][k][l] - state->f[i][i2-1][j][k][l];
+                                double df_mid = state->f[i][i2+1][j][k][l] - state->f[i][i2][j][k][l];
+                                double df_plus = state->f[i][i2+2][j][k][l] - state->f[i][i2+1][j][k][l];
+                                phi = minmod(df_minus, df_mid, df_plus);
+                            }
+                            
                             state->G[i][i2][j][k][l] = 0.5 * c2 * (f_upper + f_lower) -
                                                       0.5 * fabs(c2) * (f_upper - f_lower - phi);
                         }
