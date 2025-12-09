@@ -1014,7 +1014,7 @@ void compute_flux_x(SimulationState *state, const GridConfig *config) {
                             
                             // Compute phi_x inline (flux limiter)
                             double phi;
-                            if (i >= 1 && i <= config->nx - 2) {
+                            if (i >= 1 && i < config->nx - 2) {
                                 double df_minus = state->f[i][i2][j][k][l] - state->f[i-1][i2][j][k][l];
                                 double df_mid = state->f[i+1][i2][j][k][l] - state->f[i][i2][j][k][l];
                                 double df_plus = state->f[i+2][i2][j][k][l] - state->f[i+1][i2][j][k][l];
@@ -1048,7 +1048,7 @@ void compute_flux_y(SimulationState *state, const GridConfig *config) {
                             
                             // Compute phi_y inline (flux limiter)
                             double phi;
-                            if (i2 >= 1 && i2 <= config->ny - 2) {
+                            if (i2 >= 1 && i2 < config->ny - 2) {
                                 double df_minus = state->f[i][i2][j][k][l] - state->f[i][i2-1][j][k][l];
                                 double df_mid = state->f[i][i2+1][j][k][l] - state->f[i][i2][j][k][l];
                                 double df_plus = state->f[i][i2+2][j][k][l] - state->f[i][i2+1][j][k][l];
