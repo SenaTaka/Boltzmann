@@ -1013,12 +1013,14 @@ void compute_flux_x(SimulationState *state, const GridConfig *config) {
                             double f_right = state->f[i+1][i2][j][k][l];
                             
                             // Compute phi_x inline (flux limiter)
-                            double phi = 0.0;
+                            double phi;
                             if (i >= 1 && i < config->nx - 2) {
                                 double df_minus = state->f[i][i2][j][k][l] - state->f[i-1][i2][j][k][l];
                                 double df_mid = state->f[i+1][i2][j][k][l] - state->f[i][i2][j][k][l];
                                 double df_plus = state->f[i+2][i2][j][k][l] - state->f[i+1][i2][j][k][l];
                                 phi = minmod(df_minus, df_mid, df_plus);
+                            } else {
+                                phi = 0.0;
                             }
                             
                             state->F[i][i2][j][k][l] = 0.5 * c1 * (f_right + f_left) -
@@ -1045,12 +1047,14 @@ void compute_flux_y(SimulationState *state, const GridConfig *config) {
                             double f_upper = state->f[i][i2+1][j][k][l];
                             
                             // Compute phi_y inline (flux limiter)
-                            double phi = 0.0;
+                            double phi;
                             if (i2 >= 1 && i2 < config->ny - 2) {
                                 double df_minus = state->f[i][i2][j][k][l] - state->f[i][i2-1][j][k][l];
                                 double df_mid = state->f[i][i2+1][j][k][l] - state->f[i][i2][j][k][l];
                                 double df_plus = state->f[i][i2+2][j][k][l] - state->f[i][i2+1][j][k][l];
                                 phi = minmod(df_minus, df_mid, df_plus);
+                            } else {
+                                phi = 0.0;
                             }
                             
                             state->G[i][i2][j][k][l] = 0.5 * c2 * (f_upper + f_lower) -
@@ -1149,16 +1153,17 @@ void runge_kutta_step2(SimulationState *state, const GridConfig *config,
                 for (int j = 0; j < config->ncj; j++) {
                     for (int k = 0; k < config->nck; k++) {
                         for (int l = 0; l < config->ncl; l++) {
+                            double f_current = state->f[i][i2][j][k][l];
                             double rhs_star = -1.0 / config->dx * (state->F[i][i2][j][k][l] -
                                                                    state->F[i-1][i2][j][k][l]) -
                                              1.0 / config->dy * (state->G[i][i2][j][k][l] -
                                                                 state->G[i][i2-1][j][k][l]) -
                                              state->freq_coll[i][i2] / pc->t_ref *
-                                             (state->f[i][i2][j][k][l] - state->feq[i][i2][j][k][l]);
+                                             (f_current - state->feq[i][i2][j][k][l]);
                             
                             // Write directly to f, eliminating the need for fn array
                             state->f[i][i2][j][k][l] = 0.5 * (state->fb[i][i2][j][k][l] +
-                                                              state->f[i][i2][j][k][l] +
+                                                              f_current +
                                                               state->dt * rhs_star);
                         }
                     }
