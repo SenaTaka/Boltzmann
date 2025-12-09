@@ -3,7 +3,7 @@
 // Non-dimensional Boltzmann Equation BGK Model 2D3V Numerical Simulation
 // Reference: Mieussens, L. and Struchtrup, H., Physics of Fluids, Vol. 16, No. 8, 2004
 //
-// Compile: gcc -fopenmp -O2 src_refactored.c -o sim -lm
+// Compile: gcc -fopenmp -O3 -march=native -ffast-math -funroll-loops src_refactored.c -o sim -lm
 //*******************************************************************************************
 
 #include <stdio.h>
@@ -671,17 +671,20 @@ void setup_initial_condition(SimulationState *state, const GridConfig *config,
 
 void update_transport_properties(SimulationState *state, const GridConfig *config,
                                 const PhysicalConstants *pc) {
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < config->nx; i++) {
-        for (int i2 = 0; i2 < config->ny; i2++) {
-            double T = state->T[i][i2];
-            double p = state->p[i][i2];
-            
-            state->mic_vel_ave[i][i2] = sqrt(8.0 * pc->gas_constant * pc->T_ref * T / pc->pi);
-            state->mu[i][i2] = pc->mu_ref * pow(T, pc->omega);
-            state->mfp[i][i2] = sqrt(pc->pi * pc->gas_constant * pc->T_ref * T / 2.0) *
-                               state->mu[i][i2] / (pc->p_ref * p);
-            state->freq_coll[i][i2] = state->mic_vel_ave[i][i2] / state->mfp[i][i2];
+    #pragma omp parallel
+    {
+        #pragma omp for collapse(2) nowait
+        for (int i = 0; i < config->nx; i++) {
+            for (int i2 = 0; i2 < config->ny; i2++) {
+                double T = state->T[i][i2];
+                double p = state->p[i][i2];
+                
+                state->mic_vel_ave[i][i2] = sqrt(8.0 * pc->gas_constant * pc->T_ref * T / pc->pi);
+                state->mu[i][i2] = pc->mu_ref * pow(T, pc->omega);
+                state->mfp[i][i2] = sqrt(pc->pi * pc->gas_constant * pc->T_ref * T / 2.0) *
+                                   state->mu[i][i2] / (pc->p_ref * p);
+                state->freq_coll[i][i2] = state->mic_vel_ave[i][i2] / state->mfp[i][i2];
+            }
         }
     }
 }
@@ -985,7 +988,7 @@ void solve_newton_coefficients(Coefficients *coeffs, const SimulationState *stat
 
 void compute_local_equilibrium_newton(SimulationState *state, const GridConfig *config,
                                      const NewtonConfig *nc, const PhysicalConstants *pc) {
-    #pragma omp parallel for collapse(2) schedule(dynamic)
+    #pragma omp parallel for collapse(2) schedule(static)
     for (int i = 0; i < config->nx; i++) {
         for (int i2 = 0; i2 < config->ny; i2++) {
             Coefficients coeffs;
@@ -1014,16 +1017,19 @@ void compute_local_equilibrium_newton(SimulationState *state, const GridConfig *
 //*******************************************************************************************
 
 void compute_flux_limiters_x(SimulationState *state, const GridConfig *config) {
-    #pragma omp parallel for collapse(2)
-    for (int i = 1; i < config->nx - 2; i++) {
-        for (int i2 = 0; i2 < config->ny; i2++) {
-            for (int j = 0; j < config->ncj; j++) {
-                for (int k = 0; k < config->nck; k++) {
-                    for (int l = 0; l < config->ncl; l++) {
-                        double df_minus = state->f[i][i2][j][k][l] - state->f[i-1][i2][j][k][l];
-                        double df_mid = state->f[i+1][i2][j][k][l] - state->f[i][i2][j][k][l];
-                        double df_plus = state->f[i+2][i2][j][k][l] - state->f[i+1][i2][j][k][l];
-                        state->phi_x[i][i2][j][k][l] = minmod(df_minus, df_mid, df_plus);
+    #pragma omp parallel
+    {
+        #pragma omp for collapse(2) nowait
+        for (int i = 1; i < config->nx - 2; i++) {
+            for (int i2 = 0; i2 < config->ny; i2++) {
+                for (int j = 0; j < config->ncj; j++) {
+                    for (int k = 0; k < config->nck; k++) {
+                        for (int l = 0; l < config->ncl; l++) {
+                            double df_minus = state->f[i][i2][j][k][l] - state->f[i-1][i2][j][k][l];
+                            double df_mid = state->f[i+1][i2][j][k][l] - state->f[i][i2][j][k][l];
+                            double df_plus = state->f[i+2][i2][j][k][l] - state->f[i+1][i2][j][k][l];
+                            state->phi_x[i][i2][j][k][l] = minmod(df_minus, df_mid, df_plus);
+                        }
                     }
                 }
             }
@@ -1032,16 +1038,19 @@ void compute_flux_limiters_x(SimulationState *state, const GridConfig *config) {
 }
 
 void compute_flux_limiters_y(SimulationState *state, const GridConfig *config) {
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < config->nx; i++) {
-        for (int i2 = 1; i2 < config->ny - 2; i2++) {
-            for (int j = 0; j < config->ncj; j++) {
-                for (int k = 0; k < config->nck; k++) {
-                    for (int l = 0; l < config->ncl; l++) {
-                        double df_minus = state->f[i][i2][j][k][l] - state->f[i][i2-1][j][k][l];
-                        double df_mid = state->f[i][i2+1][j][k][l] - state->f[i][i2][j][k][l];
-                        double df_plus = state->f[i][i2+2][j][k][l] - state->f[i][i2+1][j][k][l];
-                        state->phi_y[i][i2][j][k][l] = minmod(df_minus, df_mid, df_plus);
+    #pragma omp parallel
+    {
+        #pragma omp for collapse(2) nowait
+        for (int i = 0; i < config->nx; i++) {
+            for (int i2 = 1; i2 < config->ny - 2; i2++) {
+                for (int j = 0; j < config->ncj; j++) {
+                    for (int k = 0; k < config->nck; k++) {
+                        for (int l = 0; l < config->ncl; l++) {
+                            double df_minus = state->f[i][i2][j][k][l] - state->f[i][i2-1][j][k][l];
+                            double df_mid = state->f[i][i2+1][j][k][l] - state->f[i][i2][j][k][l];
+                            double df_plus = state->f[i][i2+2][j][k][l] - state->f[i][i2+1][j][k][l];
+                            state->phi_y[i][i2][j][k][l] = minmod(df_minus, df_mid, df_plus);
+                        }
                     }
                 }
             }
@@ -1050,18 +1059,21 @@ void compute_flux_limiters_y(SimulationState *state, const GridConfig *config) {
 }
 
 void compute_flux_x(SimulationState *state, const GridConfig *config) {
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < config->nx - 1; i++) {
-        for (int i2 = 0; i2 < config->ny; i2++) {
-            for (int j = 0; j < config->ncj; j++) {
-                double c1 = state->c1[j];
-                for (int k = 0; k < config->nck; k++) {
-                    for (int l = 0; l < config->ncl; l++) {
-                        double f_left = state->f[i][i2][j][k][l];
-                        double f_right = state->f[i+1][i2][j][k][l];
-                        double phi = state->phi_x[i][i2][j][k][l];
-                        state->F[i][i2][j][k][l] = 0.5 * c1 * (f_right + f_left) -
-                                                  0.5 * fabs(c1) * (f_right - f_left - phi);
+    #pragma omp parallel
+    {
+        #pragma omp for collapse(2) nowait
+        for (int i = 0; i < config->nx - 1; i++) {
+            for (int i2 = 0; i2 < config->ny; i2++) {
+                for (int j = 0; j < config->ncj; j++) {
+                    double c1 = state->c1[j];
+                    for (int k = 0; k < config->nck; k++) {
+                        for (int l = 0; l < config->ncl; l++) {
+                            double f_left = state->f[i][i2][j][k][l];
+                            double f_right = state->f[i+1][i2][j][k][l];
+                            double phi = state->phi_x[i][i2][j][k][l];
+                            state->F[i][i2][j][k][l] = 0.5 * c1 * (f_right + f_left) -
+                                                      0.5 * fabs(c1) * (f_right - f_left - phi);
+                        }
                     }
                 }
             }
@@ -1070,18 +1082,21 @@ void compute_flux_x(SimulationState *state, const GridConfig *config) {
 }
 
 void compute_flux_y(SimulationState *state, const GridConfig *config) {
-    #pragma omp parallel for collapse(2)
-    for (int i = 0; i < config->nx; i++) {
-        for (int i2 = 0; i2 < config->ny - 1; i2++) {
-            for (int j = 0; j < config->ncj; j++) {
-                for (int k = 0; k < config->nck; k++) {
-                    double c2 = state->c2[k];
-                    for (int l = 0; l < config->ncl; l++) {
-                        double f_lower = state->f[i][i2][j][k][l];
-                        double f_upper = state->f[i][i2+1][j][k][l];
-                        double phi = state->phi_y[i][i2][j][k][l];
-                        state->G[i][i2][j][k][l] = 0.5 * c2 * (f_upper + f_lower) -
-                                                  0.5 * fabs(c2) * (f_upper - f_lower - phi);
+    #pragma omp parallel
+    {
+        #pragma omp for collapse(2) nowait
+        for (int i = 0; i < config->nx; i++) {
+            for (int i2 = 0; i2 < config->ny - 1; i2++) {
+                for (int j = 0; j < config->ncj; j++) {
+                    for (int k = 0; k < config->nck; k++) {
+                        double c2 = state->c2[k];
+                        for (int l = 0; l < config->ncl; l++) {
+                            double f_lower = state->f[i][i2][j][k][l];
+                            double f_upper = state->f[i][i2+1][j][k][l];
+                            double phi = state->phi_y[i][i2][j][k][l];
+                            state->G[i][i2][j][k][l] = 0.5 * c2 * (f_upper + f_lower) -
+                                                      0.5 * fabs(c2) * (f_upper - f_lower - phi);
+                        }
                     }
                 }
             }
@@ -1140,21 +1155,24 @@ void determine_timestep(SimulationState *state, const GridConfig *config,
 
 void runge_kutta_step1(SimulationState *state, const GridConfig *config,
                       const PhysicalConstants *pc) {
-    #pragma omp parallel for collapse(2)
-    for (int i = 2; i < config->nx - 1; i++) {
-        for (int i2 = 2; i2 < config->ny - 1; i2++) {
-            for (int j = 0; j < config->ncj; j++) {
-                for (int k = 0; k < config->nck; k++) {
-                    for (int l = 0; l < config->ncl; l++) {
-                        double rhs = -1.0 / config->dx * (state->F[i][i2][j][k][l] -
-                                                          state->F[i-1][i2][j][k][l]) -
-                                    1.0 / config->dy * (state->G[i][i2][j][k][l] -
-                                                       state->G[i][i2-1][j][k][l]) -
-                                    state->freq_coll[i][i2] / pc->t_ref *
-                                    (state->f[i][i2][j][k][l] - state->feq[i][i2][j][k][l]);
-                        
-                        state->fb[i][i2][j][k][l] = state->f[i][i2][j][k][l];
-                        state->f[i][i2][j][k][l] = state->fb[i][i2][j][k][l] + state->dt * rhs;
+    #pragma omp parallel
+    {
+        #pragma omp for collapse(2) nowait
+        for (int i = 2; i < config->nx - 1; i++) {
+            for (int i2 = 2; i2 < config->ny - 1; i2++) {
+                for (int j = 0; j < config->ncj; j++) {
+                    for (int k = 0; k < config->nck; k++) {
+                        for (int l = 0; l < config->ncl; l++) {
+                            double rhs = -1.0 / config->dx * (state->F[i][i2][j][k][l] -
+                                                              state->F[i-1][i2][j][k][l]) -
+                                        1.0 / config->dy * (state->G[i][i2][j][k][l] -
+                                                           state->G[i][i2-1][j][k][l]) -
+                                        state->freq_coll[i][i2] / pc->t_ref *
+                                        (state->f[i][i2][j][k][l] - state->feq[i][i2][j][k][l]);
+                            
+                            state->fb[i][i2][j][k][l] = state->f[i][i2][j][k][l];
+                            state->f[i][i2][j][k][l] = state->fb[i][i2][j][k][l] + state->dt * rhs;
+                        }
                     }
                 }
             }
@@ -1164,22 +1182,25 @@ void runge_kutta_step1(SimulationState *state, const GridConfig *config,
 
 void runge_kutta_step2(SimulationState *state, const GridConfig *config,
                       const PhysicalConstants *pc) {
-    #pragma omp parallel for collapse(2)
-    for (int i = 2; i < config->nx - 1; i++) {
-        for (int i2 = 2; i2 < config->ny - 1; i2++) {
-            for (int j = 0; j < config->ncj; j++) {
-                for (int k = 0; k < config->nck; k++) {
-                    for (int l = 0; l < config->ncl; l++) {
-                        double rhs_star = -1.0 / config->dx * (state->F[i][i2][j][k][l] -
-                                                               state->F[i-1][i2][j][k][l]) -
-                                         1.0 / config->dy * (state->G[i][i2][j][k][l] -
-                                                            state->G[i][i2-1][j][k][l]) -
-                                         state->freq_coll[i][i2] / pc->t_ref *
-                                         (state->f[i][i2][j][k][l] - state->feq[i][i2][j][k][l]);
-                        
-                        state->fn[i][i2][j][k][l] = 0.5 * (state->fb[i][i2][j][k][l] +
-                                                           state->f[i][i2][j][k][l] +
-                                                           state->dt * rhs_star);
+    #pragma omp parallel
+    {
+        #pragma omp for collapse(2) nowait
+        for (int i = 2; i < config->nx - 1; i++) {
+            for (int i2 = 2; i2 < config->ny - 1; i2++) {
+                for (int j = 0; j < config->ncj; j++) {
+                    for (int k = 0; k < config->nck; k++) {
+                        for (int l = 0; l < config->ncl; l++) {
+                            double rhs_star = -1.0 / config->dx * (state->F[i][i2][j][k][l] -
+                                                                   state->F[i-1][i2][j][k][l]) -
+                                             1.0 / config->dy * (state->G[i][i2][j][k][l] -
+                                                                state->G[i][i2-1][j][k][l]) -
+                                             state->freq_coll[i][i2] / pc->t_ref *
+                                             (state->f[i][i2][j][k][l] - state->feq[i][i2][j][k][l]);
+                            
+                            state->fn[i][i2][j][k][l] = 0.5 * (state->fb[i][i2][j][k][l] +
+                                                               state->f[i][i2][j][k][l] +
+                                                               state->dt * rhs_star);
+                        }
                     }
                 }
             }
@@ -1188,13 +1209,16 @@ void runge_kutta_step2(SimulationState *state, const GridConfig *config,
 }
 
 void update_distribution(SimulationState *state, const GridConfig *config) {
-    #pragma omp parallel for collapse(2)
-    for (int i = 2; i < config->nx - 2; i++) {
-        for (int i2 = 2; i2 < config->ny - 2; i2++) {
-            for (int j = 0; j < config->ncj; j++) {
-                for (int k = 0; k < config->nck; k++) {
-                    for (int l = 0; l < config->ncl; l++) {
-                        state->f[i][i2][j][k][l] = state->fn[i][i2][j][k][l];
+    #pragma omp parallel
+    {
+        #pragma omp for collapse(2) nowait
+        for (int i = 2; i < config->nx - 2; i++) {
+            for (int i2 = 2; i2 < config->ny - 2; i2++) {
+                for (int j = 0; j < config->ncj; j++) {
+                    for (int k = 0; k < config->nck; k++) {
+                        for (int l = 0; l < config->ncl; l++) {
+                            state->f[i][i2][j][k][l] = state->fn[i][i2][j][k][l];
+                        }
                     }
                 }
             }
