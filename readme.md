@@ -52,7 +52,7 @@ Mieussens, L. and Struchtrup, H., "Numerical comparison of Bhatnagar-Gross-Krook
 ### リファクタリング版（推奨）
 
 ```bash
-gcc -fopenmp -O2 src_refactored.c -o sim -lm
+gcc -fopenmp -O3 -march=native -ffast-math -funroll-loops src_refactored.c -o sim -lm
 ```
 
 ### オリジナル版
@@ -61,10 +61,15 @@ gcc -fopenmp -O2 src_refactored.c -o sim -lm
 gcc -fopenmp -O2 src.c -o src -lm
 ```
 
-### コンパイルオプション
+### コンパイルオプション（リファクタリング版）
 - `-fopenmp`: OpenMP並列化の有効化
-- `-O2`: 最適化レベル2
+- `-O3`: 最適化レベル3（積極的なループ最適化・インライン展開）
+- `-march=native`: ネイティブCPU命令セット使用（AVX2/AVX-512など）
+- `-ffast-math`: 高速数値演算（IEEE準拠を一部緩和）
+- `-funroll-loops`: ループアンローリングの促進
 - `-lm`: 数学ライブラリのリンク
+
+注意: 数値的にシビアな検証を行う場合は `-ffast-math` を外すことを推奨します。
 
 ## 実行方法
 
